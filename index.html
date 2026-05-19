@@ -747,6 +747,45 @@
     document.getElementById('downloadedCount').innerText = allSongs.filter(s => s.fileData).length;
   }
 
+  // ===== CRITICAL FIX: Media Session with AUTO NOTIFICATION =====
+  function updateMediaSession() {
+    if (!currentSong) return;
+    if (!('mediaSession' in navigator)) return;
+    
+    const emoji = currentSong.artwork ? currentSong.artwork.charAt(0) : "🎵";
+    const svgArtwork = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231db954' rx='15'/%3E%3Ctext x='50' y='67' text-anchor='middle' fill='white' font-size='50' font-family='Apple Color Emoji, Segoe UI Emoji'%3E${encodeURIComponent(emoji)}%3C/text%3E%3C/svg%3E`;
+    
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentSong.title || "Unknown Track",
+      artist: currentSong.artist || "Fluxify",
+      album: "My Music Library",
+      artwork: [{ src: svgArtwork, sizes: "512x512", type: "image/svg+xml" }]
+    });
+    
+    document.title = `🎵 ${currentSong.title} - Fluxify`;
+  }
+
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator)) {
+      console.log("Media Session API not supported on this browser");
+      return;
+    }
+    
+    try { navigator.mediaSession.setActionHandler('play', () => { audio.play(); isPlaying = true; updatePlayButton(); navigator.mediaSession.playbackState = 'playing'; }); } catch(e) {}
+    try { navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); isPlaying = false; updatePlayButton(); navigator.mediaSession.playbackState = 'paused'; }); } catch(e) {}
+    try { navigator.mediaSession.setActionHandler('previoustrack', () => { prevTrack(); }); } catch(e) {}
+    try { navigator.mediaSession.setActionHandler('nexttrack', () => { nextTrack(); }); } catch(e) {}
+    
+    audio.addEventListener('play', () => { 
+      navigator.mediaSession.playbackState = 'playing'; 
+      updateMediaSession();
+    });
+    audio.addEventListener('pause', () => { navigator.mediaSession.playbackState = 'paused'; });
+    audio.addEventListener('ended', () => { navigator.mediaSession.playbackState = 'none'; });
+    
+    console.log("✅ Media Session API ready - Notification will auto-appear when you play a song!");
+  }
+
   function loadSong(song, autoPlay = false) {
     if (!song) return;
     audio.pause();
@@ -764,6 +803,10 @@
     currentSong = song;
     currentTitleSpan.innerText = song.title; currentArtistSpan.innerText = song.artist; miniArtSpan.innerHTML = song.artwork;
     mobileTrackTitle.innerText = song.title; mobileTrackArtist.innerText = song.artist; mobileMiniArt.innerHTML = song.artwork;
+    
+    // Update Media Session IMMEDIATELY when song loads
+    updateMediaSession();
+    
     if (autoPlay) {
       audio.play().then(() => { 
         isPlaying = true; 
@@ -771,10 +814,11 @@
         recordPlay(song.id); 
         if (audioContext) setupEqualizer(); 
         if (!song.fileData && isOnline) cacheSongOffline(song);
-        // Update Media Session when song starts playing
-        updateMediaSession();
+        // Force notification to appear
         if (navigator.mediaSession) {
           navigator.mediaSession.playbackState = 'playing';
+          // Small delay to ensure notification shows
+          setTimeout(() => { updateMediaSession(); }, 100);
         }
       }).catch(() => showToast("Click play to start", true));
     }
@@ -798,8 +842,10 @@
       else if (currentSong) audio.play().then(() => { 
         isPlaying = true; 
         recordPlay(currentSong.id);
-        if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
-        updateMediaSession();
+        if (navigator.mediaSession) {
+          navigator.mediaSession.playbackState = 'playing';
+          updateMediaSession();
+        }
       }).catch(() => showToast("Click play", true));
       else showToast("Add some songs first!", true);
     }
@@ -1104,44 +1150,6 @@
   }
   function closeLyrics() { document.getElementById("lyricsModal").classList.remove("show"); }
 
-  // ===== MEDIA SESSION API - LOCK SCREEN & NOTIFICATION CONTROLS =====
-  function updateMediaSession() {
-    if (!currentSong) return;
-    if (!('mediaSession' in navigator)) return;
-    
-    // Create artwork emoji
-    const emoji = currentSong.artwork ? currentSong.artwork.charAt(0) : "🎵";
-    const svgArtwork = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231db954' rx='15'/%3E%3Ctext x='50' y='67' text-anchor='middle' fill='white' font-size='50' font-family='Apple Color Emoji, Segoe UI Emoji'%3E${encodeURIComponent(emoji)}%3C/text%3E%3C/svg%3E`;
-    
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: currentSong.title || "Unknown Track",
-      artist: currentSong.artist || "Fluxify",
-      album: "My Music",
-      artwork: [{ src: svgArtwork, sizes: "512x512", type: "image/svg+xml" }]
-    });
-    
-    document.title = `🎵 ${currentSong.title} - Fluxify`;
-  }
-
-  function setupMediaSession() {
-    if (!('mediaSession' in navigator)) {
-      console.log("Media Session API not supported");
-      return;
-    }
-    
-    try { navigator.mediaSession.setActionHandler('play', () => { audio.play(); isPlaying = true; updatePlayButton(); navigator.mediaSession.playbackState = 'playing'; }); } catch(e) {}
-    try { navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); isPlaying = false; updatePlayButton(); navigator.mediaSession.playbackState = 'paused'; }); } catch(e) {}
-    try { navigator.mediaSession.setActionHandler('previoustrack', () => { prevTrack(); }); } catch(e) {}
-    try { navigator.mediaSession.setActionHandler('nexttrack', () => { nextTrack(); }); } catch(e) {}
-    
-    audio.addEventListener('play', () => { navigator.mediaSession.playbackState = 'playing'; updateMediaSession(); });
-    audio.addEventListener('pause', () => { navigator.mediaSession.playbackState = 'paused'; });
-    audio.addEventListener('ended', () => { navigator.mediaSession.playbackState = 'none'; });
-    
-    updateMediaSession();
-    console.log("✅ Media Session API ready - Lock screen controls enabled!");
-  }
-
   // DOM Elements
   const searchInput = document.getElementById("searchInput");
   const shuffleBtn = document.getElementById("shuffleBtn");
@@ -1246,7 +1254,7 @@
     renderSmartSections();
     startVisualizer();
     setupMediaSession();
-    if (allSongs.length > 0) { showToast(`🎵 ${allSongs.length} songs ready! Lock screen controls enabled.`); }
+    if (allSongs.length > 0) { showToast(`🎵 ${allSongs.length} songs ready! 🔔 Notification will appear when you play a song.`); }
     else { showToast("Click '+ Add' or connect to internet"); }
     if (!isOnline && allSongs.filter(s=>s.fileData).length === 0) { showToast("No downloaded songs. Connect to internet to load music.", true); }
   }
